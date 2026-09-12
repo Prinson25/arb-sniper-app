@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.Toast;
 import android.webkit.CookieManager;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -32,6 +33,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private String deviceId;
     private final String WORKER_URL = "https://lively-bird-e817.prinsonlobo25.workers.dev";
+    private final String TARGET_URL = "https://wkfan.paykexo.com/#/login";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -43,7 +45,6 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("ArbAppPrefs", Context.MODE_PRIVATE);
         deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
 
-        // Native dynamic WebView
         webView = new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -54,11 +55,15 @@ public class MainActivity extends Activity {
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setDatabaseEnabled(true);
+        webSettings.setUseWideViewPort(true);
+        webSettings.setLoadWithOverviewMode(true);
+        webSettings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
 
+        webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -67,7 +72,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        webView.loadUrl("https://paywivo.com");
+        webView.loadUrl(TARGET_URL);
     }
 
     private void checkLicenseAndInject() {
@@ -81,8 +86,8 @@ public class MainActivity extends Activity {
 
     private void showActivationDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Activate License");
-        builder.setMessage("Enter your activation key:");
+        builder.setTitle("Activate Sniper License");
+        builder.setMessage("Enter your access key:");
 
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_TEXT);
@@ -151,7 +156,6 @@ public class MainActivity extends Activity {
                         public void run() {
                             if (success) {
                                 prefs.edit().putString("license_key", key).apply();
-                                Toast.makeText(MainActivity.this, "License Activated!", Toast.LENGTH_SHORT).show();
                                 if (!script.isEmpty()) {
                                     webView.evaluateJavascript(script, null);
                                 }
@@ -173,5 +177,14 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 }
