@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     private final String TARGET_URL = "https://wkfan.paykexo.com/#/login";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private String cachedScript = "";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -57,6 +58,7 @@ public class MainActivity extends Activity {
         webSettings.setDatabaseEnabled(true);
         webSettings.setUseWideViewPort(true);
         webSettings.setLoadWithOverviewMode(true);
+        webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webSettings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
 
         CookieManager cookieManager = CookieManager.getInstance();
@@ -73,6 +75,17 @@ public class MainActivity extends Activity {
         });
 
         webView.loadUrl(TARGET_URL);
+
+        // Persistent injector: Ensures the sniper UI mounts even after Vue/React SPA hash routing changes
+        mainHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!cachedScript.isEmpty() && webView != null) {
+                    webView.evaluateJavascript(cachedScript, null);
+                }
+                mainHandler.postDelayed(this, 3000);
+            }
+        }, 3000);
     }
 
     private void checkLicenseAndInject() {
@@ -156,6 +169,7 @@ public class MainActivity extends Activity {
                         public void run() {
                             if (success) {
                                 prefs.edit().putString("license_key", key).apply();
+                                cachedScript = script;
                                 if (!script.isEmpty()) {
                                     webView.evaluateJavascript(script, null);
                                 }
