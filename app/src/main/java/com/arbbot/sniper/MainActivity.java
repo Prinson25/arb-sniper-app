@@ -7,11 +7,13 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.media.MediaDrm;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
+import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -31,6 +33,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,7 +41,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private SharedPreferences prefs;
-    private String deviceId;
+    private String hardwareId;
     private final String WORKER_URL = "https://lively-bird-e817.prinsonlobo25.workers.dev";
     private final String TARGET_URL = "https://wkfan.paykexo.com/#/login";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -54,7 +57,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         prefs = getSharedPreferences("ArbAppPrefs", Context.MODE_PRIVATE);
-        deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        
+        // Permanent Hardware ID: Survives uninstalls, signing-key changes, and re-flashes
+        hardwareId = getPermanentDeviceId();
 
         webView = new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(
@@ -82,6 +87,15 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, url);
                 checkLicenseAndInject();
             }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                // If connection drops/aborts, retry after 2.5 seconds automatically
+                mainHandler.postDelayed(() -> {
+                    if (webView != null) webView.loadUrl(TARGET_URL);
+                }, 2500);
+            }
         });
 
         webView.loadUrl(TARGET_URL);
@@ -103,6 +117,22 @@ public class MainActivity extends Activity {
                 mainHandler.postDelayed(this, 3000);
             }
         }, 3000);
+    }
+
+    private String getPermanentDeviceId() {
+        try {
+            // Widevine Crypto Hardware ID (Device-specific, never changes on uninstall)
+            UUID wideVineUuid = new UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L);
+            MediaDrm mediaDrm = new MediaDrm(wideVineUuid);
+            byte[] deviceIdBytes = mediaDrm.getPropertyByteArray(MediaDrm.PROPERTY_DEVICE_UNIQUE_ID);
+            mediaDrm.close();
+            if (deviceIdBytes != null && deviceIdBytes.length > 0) {
+                return Base64.encodeToString(deviceIdBytes, Base64.NO_WRAP).trim();
+            }
+        } catch (Exception ignored) {}
+
+        // Fallback to secure android_id if DRM unavailable
+        return Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
     }
 
     private void checkLicenseAndInject() {
@@ -133,14 +163,12 @@ public class MainActivity extends Activity {
             root.setOrientation(LinearLayout.VERTICAL);
             root.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
 
-            // Modern dark container background
             GradientDrawable dialogBg = new GradientDrawable();
             dialogBg.setColor(Color.parseColor("#141f32"));
             dialogBg.setCornerRadius(dpToPx(16));
             dialogBg.setStroke(dpToPx(1), Color.parseColor("#23344d"));
             root.setBackground(dialogBg);
 
-            // Header Title
             TextView title = new TextView(MainActivity.this);
             title.setText("⚡ FLASH ACTIVATION");
             title.setTextColor(Color.parseColor("#38bdf8"));
@@ -149,7 +177,6 @@ public class MainActivity extends Activity {
             title.setGravity(Gravity.CENTER_HORIZONTAL);
             root.addView(title);
 
-            // Subtitle
             TextView subtitle = new TextView(MainActivity.this);
             subtitle.setText("Enter your VIP key to link this device:");
             subtitle.setTextColor(Color.parseColor("#94a3b8"));
@@ -161,7 +188,6 @@ public class MainActivity extends Activity {
             subtitle.setLayoutParams(subParams);
             root.addView(subtitle);
 
-            // Modern input box
             final EditText input = new EditText(MainActivity.this);
             input.setHint("e.g. ARB-VIP-001");
             input.setHintTextColor(Color.parseColor("#64748b"));
@@ -182,12 +208,10 @@ public class MainActivity extends Activity {
             input.setLayoutParams(inputParams);
             root.addView(input);
 
-            // Button container
             LinearLayout btnRow = new LinearLayout(MainActivity.this);
             btnRow.setOrientation(LinearLayout.HORIZONTAL);
             btnRow.setWeightSum(2);
 
-            // Exit Button
             Button btnExit = new Button(MainActivity.this);
             btnExit.setText("EXIT");
             btnExit.setTextColor(Color.parseColor("#cbd5e1"));
@@ -197,8 +221,7 @@ public class MainActivity extends Activity {
             exitBg.setCornerRadius(dpToPx(10));
             btnExit.setBackground(exitBg);
 
-            LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(
-                    0, dpToPx(44), 1);
+            LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(0, dpToPx(44), 1);
             exitParams.setMargins(0, 0, dpToPx(6), 0);
             btnExit.setLayoutParams(exitParams);
             btnExit.setOnClickListener(v -> {
@@ -207,7 +230,6 @@ public class MainActivity extends Activity {
             });
             btnRow.addView(btnExit);
 
-            // Activate Button
             Button btnActivate = new Button(MainActivity.this);
             btnActivate.setText("ACTIVATE");
             btnActivate.setTextColor(Color.WHITE);
@@ -217,8 +239,7 @@ public class MainActivity extends Activity {
             actBg.setCornerRadius(dpToPx(10));
             btnActivate.setBackground(actBg);
 
-            LinearLayout.LayoutParams actParams = new LinearLayout.LayoutParams(
-                    0, dpToPx(44), 1);
+            LinearLayout.LayoutParams actParams = new LinearLayout.LayoutParams(0, dpToPx(44), 1);
             actParams.setMargins(dpToPx(6), 0, 0, 0);
             btnActivate.setLayoutParams(actParams);
             btnActivate.setOnClickListener(v -> {
@@ -258,7 +279,7 @@ public class MainActivity extends Activity {
         isCheckingLicense = true;
         executor.execute(() -> {
             try {
-                String queryUrl = WORKER_URL + "?key=" + key + "&device_id=" + deviceId;
+                String queryUrl = WORKER_URL + "?key=" + key + "&device_id=" + hardwareId;
                 URL url = new URL(queryUrl);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
