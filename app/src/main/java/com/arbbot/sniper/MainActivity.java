@@ -37,6 +37,8 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String cachedScript = "";
+    private boolean isScriptInjected = false;
+    private boolean isCheckingLicense = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -70,18 +72,28 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                // When page loads or refreshes, trigger activation/injection
                 checkLicenseAndInject();
             }
         });
 
         webView.loadUrl(TARGET_URL);
 
-        // Persistent injector: Ensures the sniper UI mounts even after Vue/React SPA hash routing changes
+        // Safe SPA mounting check:
+        // Only mounts once per page load and does NOT wipe input field states
         mainHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (!cachedScript.isEmpty() && webView != null) {
-                    webView.evaluateJavascript(cachedScript, null);
+                if (!cachedScript.isEmpty() && webView != null && !isScriptInjected) {
+                    webView.evaluateJavascript(
+                        "(function() { return Boolean(document.getElementById('arb-autobuy-panel')); })();",
+                        value -> {
+                            if ("false".equals(value)) {
+                                webView.evaluateJavascript(cachedScript, null);
+                                isScriptInjected = true;
+                            }
+                        }
+                    );
                 }
                 mainHandler.postDelayed(this, 3000);
             }
@@ -89,6 +101,8 @@ public class MainActivity extends Activity {
     }
 
     private void checkLicenseAndInject() {
+        if (isCheckingLicense) return;
+
         String savedKey = prefs.getString("license_key", null);
         if (savedKey == null || savedKey.trim().isEmpty()) {
             showActivationDialog();
@@ -98,41 +112,47 @@ public class MainActivity extends Activity {
     }
 
     private void showActivationDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Activate Sniper License");
-        builder.setMessage("Enter your access key:");
-
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        input.setHint("e.g. ARB-VIP-001");
-        builder.setView(input);
-
-        builder.setPositiveButton("Activate", new DialogInterface.OnClickListener() {
+        mainHandler.post(new Runnable() {
             @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String enteredKey = input.getText().toString().trim();
-                if (!enteredKey.isEmpty()) {
-                    validateWithServer(enteredKey);
-                } else {
-                    Toast.makeText(MainActivity.this, "Key cannot be empty", Toast.LENGTH_SHORT).show();
-                    finish();
-                }
+            public void run() {
+                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                builder.setTitle("⚡ Flash Activation");
+                builder.setMessage("Enter your VIP License Key to activate on this device:");
+
+                final EditText input = new EditText(MainActivity.this);
+                input.setInputType(InputType.TYPE_CLASS_TEXT);
+                input.setHint("e.g. ARB-VIP-001");
+                builder.setView(input);
+
+                builder.setPositiveButton("Activate", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String enteredKey = input.getText().toString().trim();
+                        if (!enteredKey.isEmpty()) {
+                            validateWithServer(enteredKey);
+                        } else {
+                            Toast.makeText(MainActivity.this, "Key cannot be empty", Toast.LENGTH_SHORT).show();
+                            showActivationDialog();
+                        }
+                    }
+                });
+
+                builder.setNegativeButton("Exit", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.cancel();
+                        finish();
+                    }
+                });
+
+                builder.setCancelable(false);
+                builder.show();
             }
         });
-
-        builder.setNegativeButton("Exit", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                dialog.cancel();
-                finish();
-            }
-        });
-
-        builder.setCancelable(false);
-        builder.show();
     }
 
     private void validateWithServer(final String key) {
+        isCheckingLicense = true;
         executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -167,15 +187,17 @@ public class MainActivity extends Activity {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            if (success) {
+                            isCheckingLicense = false;
+                            if (success && !script.isEmpty()) {
                                 prefs.edit().putString("license_key", key).apply();
                                 cachedScript = script;
-                                if (!script.isEmpty()) {
-                                    webView.evaluateJavascript(script, null);
-                                }
+                                isScriptInjected = true;
+                                webView.evaluateJavascript(script, null);
+                                Toast.makeText(MainActivity.this, "Activated successfully!", Toast.LENGTH_SHORT).show();
                             } else {
                                 Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
                                 prefs.edit().remove("license_key").apply();
+                                isScriptInjected = false;
                                 showActivationDialog();
                             }
                         }
@@ -185,6 +207,7 @@ public class MainActivity extends Activity {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
+                            isCheckingLicense = false;
                             Toast.makeText(MainActivity.this, "Connection error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         }
                     });
